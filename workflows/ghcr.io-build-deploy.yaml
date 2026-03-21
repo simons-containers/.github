@@ -41,7 +41,7 @@ jobs:
       - name: Build and push
         run: |
           mapfile -t BUILD_ARGS < <(
-            yq -r 'to_entries[] | "--build-arg \(.key | ascii_upcase)_VERSION=\(.value)"' versions.yaml
+            yq -r "to_entries[] | \"--build-arg \(.key | ascii_upcase)_VERSION=\(.value)\"" versions.yaml
           )
           export VERSION=$(yq -r .${APPNAME} versions.yaml)
 
