@@ -40,9 +40,10 @@ jobs:
 
       - name: Build and push
         run: |
-          mapfile -t BUILD_ARGS < <(
-            yq -r "to_entries[] | \"--build-arg \(.key | ascii_upcase)_VERSION=\(.value)\"" versions.yaml
-          )
+          while IFS=$'\t' read -r key value; do
+            BUILD_ARGS+=("--build-arg" "${key^^}_VERSION=${value}")
+          done < <(yq -r 'to_entries[] | "\(.key)\t\(.value)"' versions.yaml)
+
           export VERSION=$(yq -r .${APPNAME} versions.yaml)
 
           docker buildx build \
