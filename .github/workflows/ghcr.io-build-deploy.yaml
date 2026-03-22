@@ -49,6 +49,7 @@ jobs:
 
           docker buildx build \
             --builder ${{ steps.buildx.outputs.name }} \
+            --platform linux/amd64 \
             --cache-from type=gha,scope=local \
             --cache-to type=gha,mode=max,scope=local \
             "${BUILD_ARGS[@]}" \
