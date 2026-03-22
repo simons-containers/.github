@@ -1,5 +1,11 @@
 name: Build and publish container
 
+permissions:
+  id-token: write
+  contents: read
+  packages: write
+  attestations: write
+
 on:
   workflow_call:
     inputs:
