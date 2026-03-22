@@ -75,3 +75,14 @@ jobs:
           subject-name: ghcr.io/${{ github.repository_owner }}/${{ inputs.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+
+      - name: Retag version/latest after sigstore bundle
+        run: |
+          export VERSION=$(yq -r .${{ inputs.appname }} versions.yaml)
+          docker buildx imagetools create \
+            -t ghcr.io/{{ github.repository_owner }}/${{ inputs.image }}:latest \
+            ghcr.io/{{ github.repository_owner }}/${{ inputs.image }}@sha256:${{ steps.build.outputs.digest }}
+          docker buildx imagetools create \
+            -t ghcr.io/{{ github.repository_owner }}/${{ inputs.image }}:${VERSION} \
+            ghcr.io/{{ github.repository_owner }}/${{ inputs.image }}@sha256:${{ steps.build.outputs.digest }}
+
