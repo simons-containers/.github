@@ -40,6 +40,7 @@ jobs:
           password: ${{ secrets.ghcr_token }}
 
       - name: Build and push
+        id: build
         run: |
           while IFS=$'\t' read -r key value; do
             BUILD_ARGS+=("--build-arg" "${key^^}_VERSION=${value}")
@@ -51,9 +52,20 @@ jobs:
             --builder ${{ steps.buildx.outputs.name }} \
             --platform linux/amd64 \
             --provenance=mode=max \
+            --metadata-file build-metadata.json \
             --cache-from type=gha,scope=local \
             --cache-to type=gha,mode=max,scope=local \
             "${BUILD_ARGS[@]}" \
             -t ${REGISTRY}/${IMAGE}:${VERSION} \
             -t ${REGISTRY}/${IMAGE}:latest \
             --push -f Containerfile .
+
+          IMAGE_DIGEST=$(jq -r '.["containerimage.digest"]' build-metadata.json)
+          echo "digest=$IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Attest container
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${IMAGE}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
