@@ -51,7 +51,6 @@ jobs:
             --builder ${{ steps.buildx.outputs.name }} \
             --platform linux/amd64 \
             --provenance=mode=max \
-            --sbom=generator=syft \
             --cache-from type=gha,scope=local \
             --cache-to type=gha,mode=max,scope=local \
             "${BUILD_ARGS[@]}" \
