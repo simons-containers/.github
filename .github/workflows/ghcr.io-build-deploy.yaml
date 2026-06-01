@@ -53,6 +53,11 @@ jobs:
           done < <(yq -r 'to_entries[] | "\(.key)\t\(.value)"' versions.yaml)
 
           export VERSION=$(yq -r .${APPNAME} versions.yaml)
+          export LATEST="-t ${REGISTRY}/${IMAGE}:latest"
+          if [[ "${GITHUB_REF_NAME}" != "main" && "${GITHUB_REF_NAME}" != "master" ]]; then
+            export VERSION="${VERSION}-${GITHUB_REF_NAME//\//-}"
+            export LATEST=""
+          fi
 
           docker buildx build \
             --builder ${{ steps.buildx.outputs.name }} \
@@ -63,7 +68,7 @@ jobs:
             --cache-to type=gha,mode=max,scope=local \
             "${BUILD_ARGS[@]}" \
             -t ${REGISTRY}/${IMAGE}:${VERSION} \
-            -t ${REGISTRY}/${IMAGE}:latest \
+            $LATEST \
             --push -f Containerfile .
 
           IMAGE_DIGEST=$(jq -r '.["containerimage.digest"]' build-metadata.json)
