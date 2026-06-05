@@ -18,6 +18,9 @@ on:
       appname:
         type: string
         required: true
+      target:
+        type: string
+        required: false
     secrets:
       ghcr_token:
         required: true
@@ -67,6 +70,7 @@ jobs:
             --cache-from type=gha,scope=local \
             --cache-to type=gha,mode=max,scope=local \
             "${BUILD_ARGS[@]}" \
+            ${{ inputs.target && format('--target {0}', inputs.target) || '' }} \
             -t ${REGISTRY}/${IMAGE}:${VERSION} \
             $LATEST \
             --push -f Containerfile .
