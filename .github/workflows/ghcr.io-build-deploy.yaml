@@ -48,35 +48,43 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.ghcr_token }}
 
-      - name: Build and push
-        id: build
+      - name: Compute tags
+        id: meta
         run: |
-          while IFS=$'\t' read -r key value; do
-            BUILD_ARGS+=("--build-arg" "${key^^}_VERSION=${value}")
-          done < <(yq -r 'to_entries[] | "\(.key)\t\(.value)"' versions.yaml)
+          VERSION=$(yq -r .${{ inputs.appname }} versions.yaml)
+          LATEST="latest"
 
-          export VERSION=$(yq -r .${APPNAME} versions.yaml)
-          export LATEST="-t ${REGISTRY}/${IMAGE}:latest"
           if [[ "${GITHUB_REF_NAME}" != "main" && "${GITHUB_REF_NAME}" != "master" ]]; then
-            export VERSION="${VERSION}-${GITHUB_REF_NAME//\//-}"
-            export LATEST=""
+            VERSION="${VERSION}-${GITHUB_REF_NAME//\//-}"
+            LATEST=""
           fi
 
-          docker buildx build \
-            --builder ${{ steps.buildx.outputs.name }} \
-            --platform linux/amd64 \
-            --provenance=mode=max \
-            --metadata-file build-metadata.json \
-            --cache-from type=gha,scope=local \
-            --cache-to type=gha,mode=max,scope=local \
-            "${BUILD_ARGS[@]}" \
-            ${{ inputs.target && format('--target {0}', inputs.target) || '' }} \
-            -t ${REGISTRY}/${IMAGE}:${VERSION} \
-            $LATEST \
-            --push -f Containerfile .
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "latest=${LATEST}" >> "$GITHUB_OUTPUT"
 
-          IMAGE_DIGEST=$(jq -r '.["containerimage.digest"]' build-metadata.json)
-          echo "digest=$IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          platforms: linux/amd64
+          push: true
+
+          # Your computed tags
+          tags: |
+            ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.latest && format('{0}/{1}:{2}', inputs.registry, inputs.image, steps.meta.outputs.latest) }}
+
+          # Build args from versions.yaml
+          build-args: |
+            $(yq -r 'to_entries[] | "\(.key | ascii_upcase)_VERSION=\(.value)"' versions.yaml)
+
+          # Conditionally include the target
+          target: ${{ inputs.target != '' && inputs.target || '' }}
+
+          provenance: true
+          sbom: true
 
       - name: Attest container
         if: ${{ github.event.repository.private == false }}
