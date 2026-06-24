@@ -97,6 +97,13 @@ jobs:
           provenance: true
           sbom: true
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image with Cosign
+        run: |
+          cosign sign --keyless ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+
       - name: Attest container
         if: ${{ github.event.repository.private == false }}
         uses: actions/attest@v4
