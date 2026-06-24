@@ -107,12 +107,15 @@ jobs:
         uses: anchore/scan-action@v7
         with:
           image: ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
+          cache-db: true
           output-format: json
           fail-build: false
 
       - name: Add scan to summary
         run: |
           FILE="${{ steps.grype.outputs.json }}"
+
+          cat $FILE
       
           printf "## Grype Vulnerability Report\n\n" >> $GITHUB_STEP_SUMMARY
       
