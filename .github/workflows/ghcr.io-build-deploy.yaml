@@ -80,6 +80,7 @@ jobs:
           context: .
           file: Containerfile
           platforms: linux/amd64
+          outputs: type=image
           push: true
 
           # Computed tags
