@@ -94,8 +94,9 @@ jobs:
           # Conditionally include the target
           target: ${{ inputs.target != '' && inputs.target || '' }}
 
-          provenance: true
-          sbom: true
+          attest: |
+            type=provenance
+            type=sbom
 
       - name: Attest container
         if: ${{ github.event.repository.private == false }}
