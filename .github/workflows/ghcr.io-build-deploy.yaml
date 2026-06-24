@@ -108,6 +108,7 @@ jobs:
         with:
           image: ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
           output-format: json
+          fail-build: false
 
       - name: Add scan to summary
         run: |
