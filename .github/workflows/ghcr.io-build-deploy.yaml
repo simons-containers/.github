@@ -94,10 +94,10 @@ jobs:
           # Conditionally include the target
           target: ${{ inputs.target != '' && inputs.target || '' }}
 
-          provenance: true
           sbom: true
-          platform: linux/amd64
+          provenance: true
           outputs: type=image
+          platforms: linux/amd64
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
