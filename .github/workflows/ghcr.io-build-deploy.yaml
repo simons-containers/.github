@@ -117,32 +117,8 @@ jobs:
       
           # Total count
           COUNT=$(jq '.matches | length' "$FILE")
-          printf "✔ Scanned for vulnerabilities     [%s vulnerability matches]\n" "$COUNT" >> $GITHUB_STEP_SUMMARY
-      
-          # Severity counts
-          printf "  ├── by severity: " >> $GITHUB_STEP_SUMMARY
-          jq -r '
-            .matches
-            | group_by(.vulnerability.severity)
-            | map({sev: .[0].vulnerability.severity, count: length})
-            | sort_by(.sev)
-            | map("\(.count) \(.sev|ascii_downcase)")
-            | join(", ")
-          ' "$FILE" >> $GITHUB_STEP_SUMMARY
-      
-          # Fix status counts
-          printf "  └── by status:   " >> $GITHUB_STEP_SUMMARY
-          jq -r '
-            .matches
-            | group_by(.vulnerability.fix.state)
-            | map({state: .[0].vulnerability.fix.state, count: length})
-            | map("\(.count) \(.state|if .=="" then "not-fixed" else . end)")
-            | join(", ")
-          ' "$FILE" >> $GITHUB_STEP_SUMMARY
-      
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-      
+          printf "✔ Scanned for vulnerabilities     [%s vulnerability matches]\n\n" "$COUNT" >> $GITHUB_STEP_SUMMARY
+
           # Table header
           printf "| NAME | INSTALLED | FIXED IN | TYPE | VULNERABILITY | SEVERITY | EPSS | RISK |\n" >> $GITHUB_STEP_SUMMARY
           printf "|------|-----------|----------|------|---------------|----------|------|------|\n" >> $GITHUB_STEP_SUMMARY
