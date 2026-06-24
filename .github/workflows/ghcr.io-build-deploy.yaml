@@ -102,7 +102,7 @@ jobs:
 
       - name: Sign image with Cosign
         run: |
-          cosign sign --keyless ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+          cosign sign ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
 
       - name: Attest container
         if: ${{ github.event.repository.private == false }}
