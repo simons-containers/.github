@@ -36,6 +36,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+      
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -82,29 +85,27 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           push: true
-
           # Computed tags
           tags: |
             ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
             ${{ steps.meta.outputs.latest && format('{0}/{1}:{2}', inputs.registry, inputs.image, steps.meta.outputs.latest) }}
-
           # Use build args from args step
           build-args: ${{ steps.args.outputs.args }}
-          
           # Conditionally include the target
           target: ${{ inputs.target != '' && inputs.target || '' }}
-
           sbom: true
-          provenance: true
+          provenance: mode=max
           outputs: type=image
           platforms: linux/amd64
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
 
       - name: Sign image with Cosign
         run: |
           cosign sign --yes ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+
+      - name: Scan image
+        uses: anchore/scan-action@v7
+        with:
+          image: ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
 
       - name: Attest container
         if: ${{ github.event.repository.private == false }}
