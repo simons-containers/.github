@@ -96,6 +96,7 @@ jobs:
 
           provenance: true
           sbom: true
+          platform: linux/amd64
           outputs: type=image
 
       - name: Install Cosign
