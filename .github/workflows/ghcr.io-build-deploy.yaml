@@ -96,6 +96,7 @@ jobs:
 
           provenance: true
           sbom: true
+          outputs: type=image
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
