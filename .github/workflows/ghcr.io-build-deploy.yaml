@@ -103,9 +103,82 @@ jobs:
           cosign sign --yes ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
 
       - name: Scan image
+        id: grype
         uses: anchore/scan-action@v7
         with:
           image: ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
+          output-format: json
+
+      - name: Add scan to summary
+        run: |
+          FILE="${{ steps.grype.outputs.json }}"
+      
+          printf "## Grype Vulnerability Report\n\n" >> $GITHUB_STEP_SUMMARY
+      
+          # Total count
+          COUNT=$(jq '.matches | length' "$FILE")
+          printf "✔ Scanned for vulnerabilities     [%s vulnerability matches]\n" "$COUNT" >> $GITHUB_STEP_SUMMARY
+      
+          # Severity counts
+          printf "  ├── by severity: " >> $GITHUB_STEP_SUMMARY
+          jq -r '
+            .matches
+            | group_by(.vulnerability.severity)
+            | map({sev: .[0].vulnerability.severity, count: length})
+            | sort_by(.sev)
+            | map("\(.count) \(.sev|ascii_downcase)")
+            | join(", ")
+          ' "$FILE" >> $GITHUB_STEP_SUMMARY
+      
+          # Fix status counts
+          printf "  └── by status:   " >> $GITHUB_STEP_SUMMARY
+          jq -r '
+            .matches
+            | group_by(.vulnerability.fix.state)
+            | map({state: .[0].vulnerability.fix.state, count: length})
+            | map("\(.count) \(.state|if .=="" then "not-fixed" else . end)")
+            | join(", ")
+          ' "$FILE" >> $GITHUB_STEP_SUMMARY
+      
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+      
+          # Table header
+          printf "| NAME | INSTALLED | FIXED IN | TYPE | VULNERABILITY | SEVERITY | EPSS | RISK |\n" >> $GITHUB_STEP_SUMMARY
+          printf "|------|-----------|----------|------|---------------|----------|------|------|\n" >> $GITHUB_STEP_SUMMARY
+      
+          # Table rows
+          jq -r '
+            .matches[]
+            | {
+                name: .artifact.name,
+                installed: .artifact.version,
+                fixed: (.vulnerability.fix.versions | join(", ")),
+                type: .artifact.type,
+                vuln: .vulnerability.id,
+                sev: .vulnerability.severity,
+                epss: (if (.vulnerability.epss|length)>0
+                       then (.vulnerability.epss[0].epss|tostring + " (" + ((.vulnerability.epss[0].percentile*100|floor|tostring) + "th)") )
+                       else "" end),
+                risk: (.vulnerability.risk // "")
+              }
+            | [
+                .name,
+                .installed,
+                (if .fixed=="" then "" else .fixed end),
+                .type,
+                .vuln,
+                (if .sev=="Critical" then "<span style=\"color:red\">Critical</span>"
+                 elif .sev=="High" then "<span style=\"color:#d97706\">High</span>"
+                 elif .sev=="Medium" then "<span style=\"color:#ca8a04\">Medium</span>"
+                 elif .sev=="Low" then "<span style=\"color:#16a34a\">Low</span>"
+                 else "<span style=\"color:#6b7280\">" + .sev + "</span>" end),
+                .epss,
+                .risk
+              ]
+            | join(" | ")
+            | "| " + . + " |"
+          ' "$FILE" >> $GITHUB_STEP_SUMMARY
 
       - name: Attest container
         if: ${{ github.event.repository.private == false }}
