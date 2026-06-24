@@ -66,7 +66,7 @@ jobs:
         id: args
         run: |
           {
-            yq -r 'to_entries[] | "\(.key | ascii_upcase)_VERSION=\(.value)"' versions.yaml
+            yq -r 'to_entries[] | "\(.key | upcase)_VERSION=\(.value)"' versions.yaml
           } > build-args.txt
 
           echo "args<<EOF" >> "$GITHUB_OUTPUT"
