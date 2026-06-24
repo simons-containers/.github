@@ -130,29 +130,32 @@ jobs:
           # Table rows
           jq -r '
             .matches[]
-            # If a match entry is an array, flatten it
-            | (if type=="array" then .[] else . end)
-            # Now normalize into a safe object
+            | .vulnerability as $vuln
+            | .artifact as $art
             | {
-                name: (.artifact.name // "n/a"),
-                installed: (.artifact.version // "n/a"),
+                name: ($art.name // "n/a"),
+                installed: ($art.version // "n/a"),
                 fixed: (
-                  try (.vulnerability.fix.versions | join(", "))
-                  catch "n/a"
-                ),
-                type: (.artifact.type // "n/a"),
-                vuln: (.vulnerability.id // "n/a"),
-                sev: (.vulnerability.severity // "Unknown"),
-                epss: (
-                  if (.vulnerability.epss | type=="array" and (.vulnerability.epss|length)>0)
+                  if ($vuln.fix | type) == "object"
                   then
-                    (.vulnerability.epss[0].epss|tostring)
+                    try ($vuln.fix.versions | join(", ")) catch "n/a"
+                  else
+                    "n/a"
+                  end
+                ),
+                type: ($art.type // "n/a"),
+                vuln: ($vuln.id // "n/a"),
+                sev: ($vuln.severity // "Unknown"),
+                epss: (
+                  if ($vuln.epss | type) == "array" and ($vuln.epss|length)>0
+                  then
+                    ($vuln.epss[0].epss|tostring)
                     + " (" +
-                    ((.vulnerability.epss[0].percentile*100|floor|tostring) + "th)")
+                    ((($vuln.epss[0].percentile*100)|floor|tostring) + "th)")
                   else ""
                   end
                 ),
-                risk: (.vulnerability.risk // "")
+                risk: ($vuln.risk // "")
               }
             | [
                 .name,
@@ -160,17 +163,13 @@ jobs:
                 .fixed,
                 .type,
                 .vuln,
-                (if .sev=="Critical" then "<span style=\"color:red\">Critical</span>"
-                 elif .sev=="High" then "<span style=\"color:#d97706\">High</span>"
-                 elif .sev=="Medium" then "<span style=\"color:#ca8a04\">Medium</span>"
-                 elif .sev=="Low" then "<span style=\"color:#16a34a\">Low</span>"
-                 else "<span style=\"color:#6b7280\">" + .sev + "</span>" end),
+                .sev,
                 .epss,
                 .risk
               ]
             | join(" | ")
             | "| " + . + " |"
-          ' "$FILE" >> "$GITHUB_STEP_SUMMARY"
+            ' "$FILE" >> "$GITHUB_STEP_SUMMARY"
 
 
 
