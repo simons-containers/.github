@@ -35,7 +35,7 @@ jobs:
       APPNAME: ${{ inputs.appname }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -79,11 +79,9 @@ jobs:
         with:
           context: .
           file: Containerfile
-          platforms: linux/amd64
-          outputs: type=image
-          push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          push: true
 
           # Computed tags
           tags: |
@@ -96,9 +94,8 @@ jobs:
           # Conditionally include the target
           target: ${{ inputs.target != '' && inputs.target || '' }}
 
-          attest: |
-            type=provenance
-            type=sbom
+          provenance: true
+          sbom: true
 
       - name: Attest container
         if: ${{ github.event.repository.private == false }}
