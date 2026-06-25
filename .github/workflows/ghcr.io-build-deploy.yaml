@@ -97,7 +97,7 @@ jobs:
           # Conditionally include the target
           target: ${{ inputs.target != '' && inputs.target || '' }}
           sbom: false
-          provenance: mode=max
+          provenance: false
           outputs: type=image
           platforms: linux/amd64
 
