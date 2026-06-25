@@ -5,6 +5,7 @@ permissions:
   contents: read
   packages: write
   attestations: write
+  artifact-metadata: write
 
 on:
   workflow_call:
@@ -35,7 +36,16 @@ jobs:
       APPNAME: ${{ inputs.appname }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Setup Crane
+        uses: imjasonh/setup-crane@v0.4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -48,35 +58,56 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.ghcr_token }}
 
-      - name: Build and push
-        id: build
+      - name: Compute tags
+        id: meta
         run: |
-          while IFS=$'\t' read -r key value; do
-            BUILD_ARGS+=("--build-arg" "${key^^}_VERSION=${value}")
-          done < <(yq -r 'to_entries[] | "\(.key)\t\(.value)"' versions.yaml)
+          VERSION=$(yq -r .${{ inputs.appname }} versions.yaml)
+          LATEST="latest"
 
-          export VERSION=$(yq -r .${APPNAME} versions.yaml)
-          export LATEST="-t ${REGISTRY}/${IMAGE}:latest"
           if [[ "${GITHUB_REF_NAME}" != "main" && "${GITHUB_REF_NAME}" != "master" ]]; then
-            export VERSION="${VERSION}-${GITHUB_REF_NAME//\//-}"
-            export LATEST=""
+            VERSION="${VERSION}-${GITHUB_REF_NAME//\//-}"
+            LATEST=""
           fi
 
-          docker buildx build \
-            --builder ${{ steps.buildx.outputs.name }} \
-            --platform linux/amd64 \
-            --provenance=mode=max \
-            --metadata-file build-metadata.json \
-            --cache-from type=gha,scope=local \
-            --cache-to type=gha,mode=max,scope=local \
-            "${BUILD_ARGS[@]}" \
-            ${{ inputs.target && format('--target {0}', inputs.target) || '' }} \
-            -t ${REGISTRY}/${IMAGE}:${VERSION} \
-            $LATEST \
-            --push -f Containerfile .
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "latest=${LATEST}" >> "$GITHUB_OUTPUT"
 
-          IMAGE_DIGEST=$(jq -r '.["containerimage.digest"]' build-metadata.json)
-          echo "digest=$IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+      - name: Generate build args
+        id: args
+        run: |
+          {
+            yq -r 'to_entries[] | "\(.key | upcase)_VERSION=\(.value)"' versions.yaml
+          } > build-args.txt
+
+          echo "args<<EOF" >> "$GITHUB_OUTPUT"
+          cat build-args.txt >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Containerfile
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          push: true
+          # Computed tags
+          tags: |
+            ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.latest && format('{0}/{1}:{2}', inputs.registry, inputs.image, steps.meta.outputs.latest) }}
+          # Use build args from args step
+          build-args: ${{ steps.args.outputs.args }}
+          # Conditionally include the target
+          target: ${{ inputs.target != '' && inputs.target || '' }}
+          sbom: false
+          provenance: false
+          outputs: type=image
+          platforms: linux/amd64
+
+      - name: Sign image with Cosign
+        run: |
+          cosign sign --yes ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
 
       - name: Attest container
         if: ${{ github.event.repository.private == false }}
@@ -84,4 +115,117 @@ jobs:
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/${{ inputs.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: false
+          push-to-registry: true
+
+      - name: Generate and attest SBOM with Syft and Cosign
+        run: |
+          syft ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }} \
+            -o spdx-json=sbom.spdx.json
+          cosign attest --yes \
+            --predicate sbom.spdx.json \
+            --type spdxjson \
+            ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+
+      - name: Scan image
+        id: grype
+        uses: anchore/scan-action@v7
+        with:
+          image: ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
+          cache-db: true
+          output-format: json
+          fail-build: false
+
+      - name: Add scan to summary
+        run: |
+          FILE="${{ steps.grype.outputs.json }}"
+          cat $FILE
+      
+          printf "## Grype Vulnerability Report\n\n" >> $GITHUB_STEP_SUMMARY
+      
+          # Total count
+          COUNT=$(jq '.matches | length' "$FILE")
+          printf "✔ Scanned for vulnerabilities     [%s vulnerability matches]\n\n" "$COUNT" >> $GITHUB_STEP_SUMMARY
+
+          # Severity breakdown
+          jq -r '
+            .matches | group_by(.vulnerability.severity) | map({(.[0].vulnerability.severity): length}) | add
+            | to_entries
+            | map(
+                if .key == "Critical" then "🔴 Critical: \(.value)"
+                elif .key == "High" then "🟠 High: \(.value)"
+                elif .key == "Medium" then "🟡 Medium: \(.value)"
+                elif .key == "Low" then "🟢 Low: \(.value)"
+                else "⚪ \(.key): \(.value)"
+                end
+              )
+            | join(" &nbsp;|&nbsp; ")
+          ' "$FILE" >> $GITHUB_STEP_SUMMARY
+          printf "\n\n" >> $GITHUB_STEP_SUMMARY
+
+          # Table header
+          printf "| SEVERITY | NAME | INSTALLED | FIXED IN | TYPE | VULNERABILITY | EPSS | RISK |\n" >> $GITHUB_STEP_SUMMARY
+          printf "|----------|------|-----------|----------|------|---------------|------|------|\n" >> $GITHUB_STEP_SUMMARY
+      
+          # Table rows
+          jq -r '
+            .matches
+            | sort_by(
+                (.vulnerability.severity |
+                  if . == "Critical" then 0
+                  elif . == "High" then 1
+                  elif . == "Medium" then 2
+                  elif . == "Low" then 3
+                  else 4 end
+                ),
+                (.vulnerability.risk // 0 | tonumber * -1)
+              )
+            | .[]
+            | .vulnerability as $vuln
+            | .artifact as $art
+            | {
+                sev_badge: (
+                  if $vuln.severity == "Critical" then "🔴 Critical"
+                  elif $vuln.severity == "High" then "🟠 High"
+                  elif $vuln.severity == "Medium" then "🟡 Medium"
+                  elif $vuln.severity == "Low" then "🟢 Low"
+                  else "⚪ \($vuln.severity // "Unknown")"
+                  end
+                ),
+                name: ($art.name // "n/a"),
+                installed: ($art.version // "n/a"),
+                fixed: (
+                  if ($vuln.fix | type) == "object"
+                  then try ($vuln.fix.versions | join(", ")) catch "n/a"
+                  else "n/a"
+                  end
+                ),
+                type: ($art.type // "n/a"),
+                vuln: ($vuln.id // "n/a"),
+                epss: (
+                  if ($vuln.epss | type) == "array" and ($vuln.epss | length) > 0
+                  then
+                    (($vuln.epss[0].epss | tonumber * 100) | round | tostring) + "% · " +
+                    (($vuln.epss[0].percentile * 100 | floor) | tostring) + "th %ile"
+                  else "—"
+                  end
+                ),
+                risk: (
+                  if $vuln.risk != null and $vuln.risk != ""
+                  then ($vuln.risk | tonumber * 100 | round | tostring) + "%"
+                  else "—"
+                  end
+                )
+              }
+            | [
+                .sev_badge,
+                .name,
+                .installed,
+                .fixed,
+                .type,
+                .vuln,
+                .epss,
+                .risk
+              ]
+            | join(" | ")
+            | "| " + . + " |"
+          ' "$FILE" >> "$GITHUB_STEP_SUMMARY"
