@@ -114,7 +114,6 @@ jobs:
       - name: Add scan to summary
         run: |
           FILE="${{ steps.grype.outputs.json }}"
-
           cat $FILE
       
           printf "## Grype Vulnerability Report\n\n" >> $GITHUB_STEP_SUMMARY
@@ -123,55 +122,89 @@ jobs:
           COUNT=$(jq '.matches | length' "$FILE")
           printf "✔ Scanned for vulnerabilities     [%s vulnerability matches]\n\n" "$COUNT" >> $GITHUB_STEP_SUMMARY
 
+          # Severity breakdown
+          jq -r '
+            .matches | group_by(.vulnerability.severity) | map({(.[0].vulnerability.severity): length}) | add
+            | to_entries
+            | map(
+                if .key == "Critical" then "🔴 Critical: \(.value)"
+                elif .key == "High" then "🟠 High: \(.value)"
+                elif .key == "Medium" then "🟡 Medium: \(.value)"
+                elif .key == "Low" then "🟢 Low: \(.value)"
+                else "⚪ \(.key): \(.value)"
+                end
+              )
+            | join(" &nbsp;|&nbsp; ")
+          ' "$FILE" >> $GITHUB_STEP_SUMMARY
+          printf "\n\n" >> $GITHUB_STEP_SUMMARY
+
           # Table header
-          printf "| NAME | INSTALLED | FIXED IN | TYPE | VULNERABILITY | SEVERITY | EPSS | RISK |\n" >> $GITHUB_STEP_SUMMARY
-          printf "|------|-----------|----------|------|---------------|----------|------|------|\n" >> $GITHUB_STEP_SUMMARY
+          printf "| SEVERITY | NAME | INSTALLED | FIXED IN | TYPE | VULNERABILITY | EPSS | RISK |\n" >> $GITHUB_STEP_SUMMARY
+          printf "|----------|------|-----------|----------|------|---------------|------|------|\n" >> $GITHUB_STEP_SUMMARY
       
           # Table rows
           jq -r '
-            .matches[]
+            .matches
+            | sort_by(
+                (.vulnerability.severity |
+                  if . == "Critical" then 0
+                  elif . == "High" then 1
+                  elif . == "Medium" then 2
+                  elif . == "Low" then 3
+                  else 4 end
+                ),
+                (.vulnerability.risk // 0 | tonumber * -1)
+              )
+            | .[]
             | .vulnerability as $vuln
             | .artifact as $art
             | {
+                sev_badge: (
+                  if $vuln.severity == "Critical" then "🔴 Critical"
+                  elif $vuln.severity == "High" then "🟠 High"
+                  elif $vuln.severity == "Medium" then "🟡 Medium"
+                  elif $vuln.severity == "Low" then "🟢 Low"
+                  else "⚪ \($vuln.severity // "Unknown")"
+                  end
+                ),
                 name: ($art.name // "n/a"),
                 installed: ($art.version // "n/a"),
                 fixed: (
                   if ($vuln.fix | type) == "object"
-                  then
-                    try ($vuln.fix.versions | join(", ")) catch "n/a"
-                  else
-                    "n/a"
+                  then try ($vuln.fix.versions | join(", ")) catch "n/a"
+                  else "n/a"
                   end
                 ),
                 type: ($art.type // "n/a"),
                 vuln: ($vuln.id // "n/a"),
-                sev: ($vuln.severity // "Unknown"),
                 epss: (
-                  if ($vuln.epss | type) == "array" and ($vuln.epss|length)>0
+                  if ($vuln.epss | type) == "array" and ($vuln.epss | length) > 0
                   then
-                    ($vuln.epss[0].epss|tostring)
-                    + " (" +
-                    ((($vuln.epss[0].percentile*100)|floor|tostring) + "th)")
-                  else ""
+                    (($vuln.epss[0].epss | tonumber * 100) | round | tostring) + "% · " +
+                    (($vuln.epss[0].percentile * 100 | floor) | tostring) + "th %ile"
+                  else "—"
                   end
                 ),
-                risk: ($vuln.risk // "")
+                risk: (
+                  if $vuln.risk != null and $vuln.risk != ""
+                  then ($vuln.risk | tonumber * 100 | round | tostring) + "%"
+                  else "—"
+                  end
+                )
               }
             | [
+                .sev_badge,
                 .name,
                 .installed,
                 .fixed,
                 .type,
                 .vuln,
-                .sev,
                 .epss,
                 .risk
               ]
             | join(" | ")
             | "| " + . + " |"
-            ' "$FILE" >> "$GITHUB_STEP_SUMMARY"
-
-
+          ' "$FILE" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Attest container
         if: ${{ github.event.repository.private == false }}
