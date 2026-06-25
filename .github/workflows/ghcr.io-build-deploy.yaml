@@ -226,3 +226,14 @@ jobs:
             | join(" | ")
             | "| " + . + " |"
           ' "$FILE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retag image to top of packages list
+        run: |
+          crane tag \
+            ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }} \
+            ${{ steps.meta.outputs.version }}
+          if [[ -n "${{ steps.meta.outputs.latest }}" ]]; then
+            crane tag \
+              ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }} \
+              latest
+          fi
