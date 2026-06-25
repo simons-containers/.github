@@ -105,11 +105,13 @@ jobs:
         run: |
           cosign sign --yes ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
 
-      - name: Attest provenance with Cosign
-        run: |
-          cosign attest --yes \
-            --type slsaprovenance1 \
-            ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+      - name: Attest container
+        if: ${{ github.event.repository.private == false }}
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ inputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
       - name: Generate and attest SBOM with Syft and Cosign
         run: |
@@ -223,11 +225,3 @@ jobs:
             | join(" | ")
             | "| " + . + " |"
           ' "$FILE" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Attest container
-        if: ${{ github.event.repository.private == false }}
-        uses: actions/attest@v4
-        with:
-          subject-name: ghcr.io/${{ github.repository_owner }}/${{ inputs.image }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: false
