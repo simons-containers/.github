@@ -104,7 +104,7 @@ jobs:
 
       - name: Sign image with Cosign
         run: |
-          cosign sign --yes ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+          cosign sign --new-bundle-format --yes ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
 
       - name: Attest container
         if: ${{ github.event.repository.private == false }}
