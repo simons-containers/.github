@@ -96,7 +96,7 @@ jobs:
           build-args: ${{ steps.args.outputs.args }}
           # Conditionally include the target
           target: ${{ inputs.target != '' && inputs.target || '' }}
-          sbom: true
+          sbom: false
           provenance: mode=max
           outputs: type=image
           platforms: linux/amd64
@@ -105,7 +105,13 @@ jobs:
         run: |
           cosign sign --yes ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
 
-      - name: Generate and attest SBOM
+      - name: Attest provenance with Cosign
+        run: |
+          cosign attest --yes \
+            --type slsaprovenance1 \
+            ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+
+      - name: Generate and attest SBOM with Syft and Cosign
         run: |
           syft ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }} \
             -o spdx-json=sbom.spdx.json
