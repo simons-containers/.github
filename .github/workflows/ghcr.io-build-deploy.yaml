@@ -64,7 +64,7 @@ jobs:
           VERSION=$(yq -r .${{ inputs.appname }} versions.yaml)
           LATEST="latest"
 
-          if [[ "${GITHUB_REF_NAME}" != "main" && "${GITHUB_REF_NAME}" != "master" ]]; then
+          if [[ "${GITHUB_REF}" != "refs/heads/main" && "${GITHUB_REF}" != "refs/heads/master" ]]; then
             VERSION="${VERSION}-${GITHUB_REF_NAME//\//-}"
             LATEST=""
           fi
