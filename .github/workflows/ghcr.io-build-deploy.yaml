@@ -119,6 +119,7 @@ jobs:
           syft ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }} \
             -o spdx-json=sbom.spdx.json
           cosign attest --yes \
+            --new-bundle-format \
             --predicate sbom.spdx.json \
             --type spdxjson \
             ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
