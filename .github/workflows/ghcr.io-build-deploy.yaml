@@ -145,10 +145,10 @@ jobs:
           # Total count
           COUNT=$(jq '.matches | length' "$FILE")
           printf "✔ Scanned for vulnerabilities     [%s vulnerability matches]\n\n" "$COUNT" >> $GITHUB_STEP_SUMMARY
-
+      
           # Severity breakdown
           jq -r '
-            .matches | group_by(.vulnerability.severity) | map({(.[0].vulnerability.severity): length}) | add
+            .matches | group_by(.vulnerability.severity) | map({(.[0].vulnerability.severity): length}) | add // {}
             | to_entries
             | map(
                 if .key == "Critical" then "🔴 Critical: \(.value)"
@@ -158,10 +158,12 @@ jobs:
                 else "⚪ \(.key): \(.value)"
                 end
               )
+            | if length == 0 then ["No vulnerabilities found"]
+              else . end
             | join(" &nbsp;|&nbsp; ")
           ' "$FILE" >> $GITHUB_STEP_SUMMARY
           printf "\n\n" >> $GITHUB_STEP_SUMMARY
-
+      
           # Table header
           printf "| SEVERITY | NAME | INSTALLED | FIXED IN | TYPE | VULNERABILITY | EPSS | RISK |\n" >> $GITHUB_STEP_SUMMARY
           printf "|----------|------|-----------|----------|------|---------------|------|------|\n" >> $GITHUB_STEP_SUMMARY
@@ -169,7 +171,8 @@ jobs:
           # Table rows
           jq -r '
             .matches
-            | sort_by(
+            | if length == 0 then [] else
+              sort_by(
                 (.vulnerability.severity |
                   if . == "Critical" then 0
                   elif . == "High" then 1
@@ -179,6 +182,7 @@ jobs:
                 ),
                 (.vulnerability.risk // 0 | tonumber * -1)
               )
+            end
             | .[]
             | .vulnerability as $vuln
             | .artifact as $art
