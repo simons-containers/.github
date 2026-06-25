@@ -36,7 +36,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
-      
+
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@v0
+
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
 
@@ -101,6 +104,15 @@ jobs:
       - name: Sign image with Cosign
         run: |
           cosign sign --yes ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+
+      - name: Generate and attest SBOM
+        run: |
+          syft ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }} \
+            -o spdx-json=sbom.spdx.json
+          cosign attest --yes \
+            --predicate sbom.spdx.json \
+            --type spdxjson \
+            ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
 
       - name: Scan image
         id: grype
