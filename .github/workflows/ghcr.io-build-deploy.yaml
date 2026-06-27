@@ -128,22 +128,24 @@ jobs:
 
       - name: Generate combined SBOM from versions.yaml and image
         run: |
-          yq '
+          yq -o=json '
             {
-              bomFormat: "CycloneDX",
-              specVersion: "1.6",
-              version: 1,
-              components: (
+              "bomFormat": "CycloneDX",
+              "specVersion": "1.6",
+              "version": 1,
+              "components": (
                 to_entries
                 | map({
-                    type: "library",
-                    purl: ("pkg:generic/" + .key + "@" + .value)
+                    "type": "library",
+                    "purl": ("pkg:generic/" + .key + "@" + .value)
                   })
               )
             }
-            ' versions.yaml > /tmp/versions-sbom.json
+            ' versions.yaml  > /tmp/versions-sbom.json
+
           syft ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }} \
             -o cyclonedx-json > /tmp/syft-sbom.json
+
           jq -s '                                     
               .[0].components += .[1].components
               | .[0]
