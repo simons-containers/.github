@@ -164,7 +164,7 @@ jobs:
           path: /tmp/combined-sbom.json
 
       - name: Scan image
-        id: grype
+        id: grype-scan
         uses: anchore/scan-action@v7
         with:
           image: ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
