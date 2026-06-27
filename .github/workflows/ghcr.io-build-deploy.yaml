@@ -49,7 +49,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
-        id: buildx
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -105,10 +104,6 @@ jobs:
           outputs: type=image
           platforms: linux/amd64
 
-      - name: Sign image with Cosign
-        run: |
-          cosign sign --yes ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
-
       - name: Attest container
         if: ${{ github.event.repository.private == false }}
         uses: actions/attest@v4
@@ -117,28 +112,63 @@ jobs:
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: false
 
-      - name: Generate and attest SBOM with Syft and Cosign
+      - name: Sign image with Cosign
         run: |
+          cosign sign --yes ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+
+      - name: Generate combined SBOM from versions.yaml and image
+        continue-on-error: true
+        run: |
+          yq -o=json '
+            {
+              "bomFormat": "CycloneDX",
+              "specVersion": "1.6",
+              "version": 1,
+              "components": (
+                to_entries
+                | map({
+                    "type": "library",
+                    "purl": ("pkg:generic/" + .key + "@" + .value)
+                  })
+              )
+            }
+            ' versions.yaml  > /tmp/versions-sbom.json
+
           syft ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }} \
-            -o spdx-json=sbom.spdx.json
+            -o cyclonedx-json > /tmp/syft-sbom.json
+
+          jq -s '                                     
+              .[0].components += .[1].components
+              | .[0]
+            ' /tmp/versions-sbom.json /tmp/syft-sbom.json > /tmp/combined-sbom.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: SBOM
+          path: /tmp/combined-sbom.json
+
+      - name: Attest SBOM with Syft and Cosign
+        run: |
           cosign attest --yes \
-            --predicate sbom.spdx.json \
-            --type spdxjson \
+            --predicate /tmp/combined-sbom.json \
+            --type cyclonedx \
             ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
 
-      - name: Scan image
-        id: grype
+      - name: Scan SBOM
+        id: grype-scan
         uses: anchore/scan-action@v7
         with:
-          image: ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
+          sbom: /tmp/combined-sbom.json
           cache-db: true
           output-format: json
           fail-build: false
+          add-cpes-if-none: true
           severity-cutoff: critical
 
       - name: Add scan to summary
         run: |
-          FILE="${{ steps.grype.outputs.json }}"
+          FILE="${{ steps.grype-scan.outputs.json }}"
           cat $FILE
       
           printf "## Grype Vulnerability Report\n\n" >> $GITHUB_STEP_SUMMARY
