@@ -129,7 +129,7 @@ jobs:
       - uses: anchore/scan-action/download-grype@v3
         id: grype
         with:
-          grype-version: 0.114.0
+          grype-version: v0.114.0
 
 
       - name: Generate combined SBOM from versions.yaml and image
