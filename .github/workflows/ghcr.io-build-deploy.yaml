@@ -126,6 +126,37 @@ jobs:
             --type spdxjson \
             ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
 
+      - name: Generate combined SBOM from versions.yaml and image
+        run: |
+          yq '
+            {
+              bomFormat: "CycloneDX",
+              specVersion: "1.6",
+              version: 1,
+              components: (
+                to_entries
+                | map({
+                    type: "library",
+                    purl: ("pkg:generic/" + .key + "@" + .value)
+                  })
+              )
+            }
+            ' versions.yaml > /tmp/versions-sbom.json
+          syft ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }} \
+            -o cyclonedx-json > /tmp/syft-sbom.json
+          jq -s '                                     
+              .[0].components += .[1].components
+              | .[0]
+            ' /tmp/versions-sbom.json /tmp/syft-sbom.json > /tmp/combined-sbom.json
+
+          grype -v --add-cpes-if-none sbom:/tmp/combined-sbom.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SBOM
+          path: /tmp/combined-sbom.json
+
       - name: Scan image
         id: grype
         uses: anchore/scan-action@v7
