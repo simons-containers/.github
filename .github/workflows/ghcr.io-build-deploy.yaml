@@ -126,6 +126,10 @@ jobs:
             --type spdxjson \
             ${{ inputs.registry }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
 
+      - uses: anchore/scan-action/download-grype@v3
+        id: grype
+
+
       - name: Generate combined SBOM from versions.yaml and image
         run: |
           yq -o=json '
@@ -151,7 +155,7 @@ jobs:
               | .[0]
             ' /tmp/versions-sbom.json /tmp/syft-sbom.json > /tmp/combined-sbom.json
 
-          grype -v --add-cpes-if-none sbom:/tmp/combined-sbom.json
+          ${{steps.grype.outputs.cmd}} -v --add-cpes-if-none sbom:/tmp/combined-sbom.json
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v4
