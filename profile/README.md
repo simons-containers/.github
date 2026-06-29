@@ -1,4 +1,4 @@
-# Simo`ns Containers
+# Simons Containers
 
 Opinionated bare-bones container builds that avoid having a full linux distribution or unnecessary tools (`shells`, `wget`, etc...). Built and attested with Github actions, SBOM included, checked for layer inefficiency with [Dive](https://github.com/wagoodman/dive) and scanned for vulnerabilities with [Grype](https://github.com/anchore/grype).
 
